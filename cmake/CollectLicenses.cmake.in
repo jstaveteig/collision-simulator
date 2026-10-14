@@ -1,0 +1,104 @@
+set(glmSource [==[@glm_SOURCE_DIR@]==])
+set(tinyobjSource [==[@tinyobjloader_SOURCE_DIR@]==])
+set(raylibSource [==[@raylib_SOURCE_DIR@]==])
+set(includeRaylib [==[@SWEEP_BUILD_DEMO@]==])
+set(noticeDirectory [==[@CMAKE_CURRENT_BINARY_DIR@/licenses]==])
+set(noticePath "${noticeDirectory}/THIRD_PARTY_NOTICES.txt")
+
+file(MAKE_DIRECTORY "${noticeDirectory}")
+file(WRITE "${noticePath}"
+    "Sweep dependency notices\n\n"
+    "Generated from the fetched upstream sources during installation.\n"
+    "MIT SPDX notices use the complete MIT terms reproduced in this file.\n\n"
+    "GLM: 0af55ccecd98d4e5a8d1fad7de25ba429d60e863\n"
+    "tinyobjloader: 2945a967c5303b2c8c14174117c45f3302591150\n")
+
+function(readRequiredFile sourcePath outputVariable)
+    if(NOT EXISTS "${sourcePath}" OR IS_DIRECTORY "${sourcePath}")
+        message(FATAL_ERROR "Required dependency notice source is missing: ${sourcePath}")
+    endif()
+    file(READ "${sourcePath}" sourceText)
+    if("${sourceText}" STREQUAL "")
+        message(FATAL_ERROR "Required dependency notice source is empty: ${sourcePath}")
+    endif()
+    set("${outputVariable}" "${sourceText}" PARENT_SCOPE)
+endfunction()
+
+function(appendLicenseFile sourcePath sourceLabel)
+    readRequiredFile("${sourcePath}" sourceText)
+    file(APPEND "${noticePath}" "\nSource: ${sourceLabel}\n\n${sourceText}\n")
+endfunction()
+
+function(appendLicenseComments sourcePath sourceLabel)
+    readRequiredFile("${sourcePath}" remainingSource)
+    set(commentPattern "/\\*([^*]|\\*+[^*/])*\\*+/|(^|\n)[ \t]*//[^\n]*(\n[ \t]*//[^\n]*)*")
+    set(noticeCount 0)
+    while(1)
+        string(REGEX MATCH "${commentPattern}" commentText "${remainingSource}")
+        if("${commentText}" STREQUAL "")
+            break()
+        endif()
+        string(FIND "${remainingSource}" "${commentText}" commentOffset)
+        string(LENGTH "${commentText}" commentLength)
+        math(EXPR remainingOffset "${commentOffset} + ${commentLength}")
+        string(SUBSTRING "${remainingSource}" ${remainingOffset} -1 remainingSource)
+        string(TOLOWER "${commentText}" commentLowercase)
+        if(commentLowercase MATCHES "copyright|spdx-license-identifier|public[ \t\r\n]+domain|permission[ \t\r\n]+is[ \t\r\n]+(hereby[ \t\r\n]+)?granted")
+            file(APPEND "${noticePath}" "\nSource: ${sourceLabel}\n\n${commentText}\n")
+            math(EXPR noticeCount "${noticeCount} + 1")
+        endif()
+    endwhile()
+    if(noticeCount EQUAL 0)
+        message(FATAL_ERROR "No dependency notice found in required source: ${sourcePath}")
+    endif()
+endfunction()
+
+appendLicenseFile("${glmSource}/copying.txt" "glm/copying.txt")
+appendLicenseFile("${tinyobjSource}/LICENSE" "tinyobjloader/LICENSE")
+appendLicenseComments("${tinyobjSource}/tiny_obj_loader.h" "tinyobjloader/tiny_obj_loader.h")
+
+if(includeRaylib)
+    file(APPEND "${noticePath}" "\nraylib: c1ab645ca298a2801097931d1079b10ff7eb9df8\n")
+    appendLicenseFile("${raylibSource}/LICENSE" "raylib/LICENSE")
+    appendLicenseFile("${raylibSource}/src/external/glfw/LICENSE.md" "raylib/src/external/glfw/LICENSE.md")
+    set(externalSources
+        cgltf.h
+        dirent.h
+        glad.h
+        m3d.h
+        msf_gif.h
+        par_shapes.h
+        qoi.h
+        rl_gputex.h
+        rprand.h
+        sdefl.h
+        sinfl.h
+        stb_image.h
+        stb_image_resize2.h
+        stb_image_write.h
+        stb_perlin.h
+        stb_rect_pack.h
+        stb_truetype.h
+        tinyobj_loader_c.h
+        vox_loader.h)
+    list(SORT externalSources)
+    foreach(sourceName IN LISTS externalSources)
+        appendLicenseComments("${raylibSource}/src/external/${sourceName}" "raylib/src/external/${sourceName}")
+    endforeach()
+    file(GLOB_RECURSE glfwSources LIST_DIRECTORIES FALSE
+        "${raylibSource}/src/external/glfw/src/*.c"
+        "${raylibSource}/src/external/glfw/src/*.h"
+        "${raylibSource}/src/external/glfw/src/*.m"
+        "${raylibSource}/src/external/glfw/include/*.h")
+    if(NOT glfwSources)
+        message(FATAL_ERROR "GLFW dependency notice sources are missing")
+    endif()
+    list(SORT glfwSources)
+    foreach(sourcePath IN LISTS glfwSources)
+        file(RELATIVE_PATH sourceLabel "${raylibSource}" "${sourcePath}")
+        appendLicenseComments("${sourcePath}" "raylib/${sourceLabel}")
+    endforeach()
+endif()
+
+file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/share/sweep/licenses"
+    TYPE FILE FILES "${noticePath}")
